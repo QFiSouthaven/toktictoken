@@ -1,0 +1,5 @@
+{
+  "name": "Local Swarm Assistant",
+  "description": "A React-based interface for managing and interacting with a swarm of AI agents, designed to function as a standalone web app or a webview.",
+  "requestFramePermissions": []
+}

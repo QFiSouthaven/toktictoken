@@ -1,0 +1,38 @@
+
+version: '3.8'
+
+services:
+  # The Swarm Brain & UI
+  local-swarm:
+    build:
+      context: ../../
+      dockerfile: Suggestions/DevOps/Dockerfile
+    ports:
+      - "1234:1234" # Proxy & Bridge
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/local-swarm
+      - API_KEY=${API_KEY}
+    volumes:
+      # Map the Context File to the host so Claude Code can read it
+      - ../../SWARM_CONTEXT.md:/app/SWARM_CONTEXT.md
+    depends_on:
+      - mongo
+    networks:
+      - swarm-net
+
+  # Persistent Memory
+  mongo:
+    image: mongo:6.0
+    ports:
+      - "27017:27017" # Exposed to host for debug, but mainly for 'local-swarm' service
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - swarm-net
+
+volumes:
+  mongo-data:
+
+networks:
+  swarm-net:
+    driver: bridge

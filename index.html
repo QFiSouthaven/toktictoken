@@ -1,0 +1,62 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local Swarm Assistant</title>
+    <style>
+      /* Custom scrollbar for webkit (Chrome, Safari, Edge) */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1e1e1e; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #4b5563; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; 
+      }
+    </style>
+    <!-- Tailwind is loaded via CDN for simplicity, but you could also install it locally -->
+    <script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react-window": "https://esm.sh/react-window@^2.2.3",
+    "react-virtualized-auto-sizer": "https://esm.sh/react-virtualized-auto-sizer@^1.0.26",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "child_process": "https://esm.sh/child_process@^1.0.2",
+    "mongoose": "https://esm.sh/mongoose@^9.0.1",
+    "body-parser": "https://esm.sh/body-parser@^2.2.1",
+    "vitest": "https://esm.sh/vitest@^4.0.15",
+    "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4",
+    "fs": "https://esm.sh/fs@^0.0.1-security",
+    "express": "https://esm.sh/express@^5.2.1",
+    "@opentelemetry/sdk-trace-web": "https://esm.sh/@opentelemetry/sdk-trace-web@^2.2.0",
+    "@opentelemetry/context-zone": "https://esm.sh/@opentelemetry/context-zone@^2.2.0",
+    "http-proxy-middleware": "https://esm.sh/http-proxy-middleware@^3.0.5",
+    "@opentelemetry/semantic-conventions": "https://esm.sh/@opentelemetry/semantic-conventions@^1.38.0",
+    "@opentelemetry/api": "https://esm.sh/@opentelemetry/api@^1.9.0",
+    "@opentelemetry/resources": "https://esm.sh/@opentelemetry/resources@^2.2.0",
+    "cors": "https://esm.sh/cors@^2.8.5"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-900 text-gray-100 overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
