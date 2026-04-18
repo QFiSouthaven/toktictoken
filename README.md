@@ -1,98 +1,92 @@
 # openclaw
 
-Private, self-hosted chat over your own LM Studio — Telegram-style web UI. All inference stays on your machine; nothing is sent to third parties.
+Private, self-hosted chat over your own LM Studio. Runs entirely on your machine — nothing leaves the box.
 
-## Stack
+- **UI**: Telegram-style, dark, streaming
+- **Backend**: bound to `127.0.0.1` by default — not reachable from anything but your own machine
+- **Storage**: one SQLite file on your disk
+- **LLM**: whatever you load in [LM Studio](https://lmstudio.ai)
+- **Privacy**: no CDN, no external fonts, no telemetry, strict CSP
 
-- **Backend**: Fastify + TypeScript, `better-sqlite3`, `sqlite-vec` for RAG, JWT in httpOnly cookies
-- **Frontend**: React 18 + Vite + TypeScript, TanStack Query, Zustand, `react-markdown` (with GFM + syntax highlight)
-- **Deploy**: Docker Compose + Caddy (auto-HTTPS) on Ubuntu 24.04
-- **LLM**: any model loaded in [LM Studio](https://lmstudio.ai) — chat, vision, embeddings, tool-calling
+## Quick start (local)
 
-## Local development
-
-Requires Node 20+, and LM Studio running locally with a model loaded (server on `:1234`).
+Requires **Node 20+** and **LM Studio** running with a model loaded and its local server started on port `1234`.
 
 ```bash
 # 1. install deps
 npm install
 
-# 2. generate a password hash + secret
-export ADMIN_PASSWORD_HASH="$(node -e "console.log(require('bcrypt').hashSync('changeme', 12))")"
+# 2. set a password + generate secrets (once)
+export ADMIN_PASSWORD_HASH="$(node -e "console.log(require('bcrypt').hashSync(process.argv[1], 12))" 'changeme')"
 export JWT_SECRET="$(openssl rand -hex 48)"
-export LM_STUDIO_URL=http://localhost:1234
+export LM_STUDIO_URL="http://localhost:1234"
 
-# 3. run dev (backend :3000, vite :5173 with proxy)
+# 3. run
 npm run dev
 ```
 
-Open http://localhost:5173 and log in with `changeme`.
+Open http://localhost:5173 and sign in with the password you picked (`changeme` above).
 
-### Tests & typecheck
+Your chats + settings are stored in `backend/data/openclaw.sqlite`. Back that up if you care about history.
 
-```bash
-npm test
-npm run typecheck
-```
+### Persist those env vars
 
-## VPS deploy (Ubuntu 24.04)
-
-1. Point a DNS `A` record at your VPS (e.g. `chat.example.com`).
-2. SSH in, clone the repo:
-   ```bash
-   sudo mkdir -p /opt && cd /opt
-   sudo git clone <your-fork-url> openclaw
-   cd openclaw
-   sudo bash deploy/bootstrap.sh
-   ```
-   The script installs Docker, configures `ufw`, prompts for domain/email/password, generates secrets, and boots the stack with Caddy auto-HTTPS.
-3. Install LM Studio on the same VPS, load a model, start its local server on `:1234`. (LM Studio runs on the host so it can access the GPU.)
-4. Visit `https://<your-domain>` and sign in.
-
-### Useful commands
+Drop them into a shell rc file, or create a tiny loader:
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs -f app
-docker compose -f deploy/docker-compose.yml restart app
-docker compose -f deploy/docker-compose.yml down
+cat > ~/.openclaw.env <<EOF
+export ADMIN_PASSWORD_HASH='$(node -e "console.log(require('bcrypt').hashSync('changeme', 12))")'
+export JWT_SECRET='$(openssl rand -hex 48)'
+export LM_STUDIO_URL='http://localhost:1234'
+EOF
+chmod 600 ~/.openclaw.env
+# then every session:
+source ~/.openclaw.env && npm run dev
 ```
 
-### Backup
+To change the password later, regenerate the hash and restart.
 
-Your entire chat history + attachments live in one Docker volume:
+## What LM Studio capabilities are wired up
 
-```bash
-docker run --rm -v openclaw_openclaw_data:/data -v "$PWD":/out alpine \
-  tar czf /out/openclaw-backup-$(date +%F).tar.gz -C /data .
-```
-
-## Privacy posture
-
-- No CDN, no external fonts, no telemetry, strict CSP (`connect-src 'self'`).
-- Password stored as bcrypt hash; session is an httpOnly SameSite=Strict cookie.
-- All traffic forced to HTTPS via Caddy + HSTS.
-- LM Studio is only reached through the backend — it's never exposed to browsers.
-- SQLite DB file is the single source of truth; easy to back up and encrypt at rest.
-
-## LM Studio capabilities exposed
-
-| Capability | Where |
+| Capability | Where in the UI |
 |---|---|
-| Streaming chat completions | Send a message — response streams token-by-token (SSE) |
-| Model switching | Model picker in chat header |
-| System prompt / persona | Settings panel (default: "openclaw") |
-| Vision models | Attach an image, it's sent as `image_url` content part |
-| Embeddings & RAG | Settings: enable RAG, set embedding model; documents ingested via upload |
-| Tool / function calling | Backend forwards `tools`/`tool_choice`; UI surface TBD per your tool schema |
-| Parameters | temperature, top_p, max_tokens configurable per settings |
+| Streaming chat | Token-by-token rendering as the model generates |
+| Model switching | Dropdown in the chat header |
+| System prompt / persona | Settings → "System prompt" (default persona: `openclaw`) |
+| Vision models | Attach an image in the composer — sent as `image_url` content part |
+| Embeddings + RAG | Settings → set embedding model + enable RAG; ingests via upload |
+| Tool / function calling | Backend forwards `tools`/`tool_choice`; `tool_calls` deltas stream through |
+| Sampling params | Settings → temperature, top_p, max_tokens |
 
-## Project layout
+## Commands
+
+```bash
+npm run dev         # backend on :3000, vite on :5173
+npm run build       # compile backend + bundle frontend
+npm start           # run compiled backend serving the bundled frontend at :3000
+npm test            # unit tests (SSE parser)
+npm run typecheck   # tsc on both workspaces
+```
+
+## Layout
 
 ```
 backend/   Fastify API + SQLite + LM Studio client
-frontend/  React + Vite UI
-deploy/    Dockerfile, docker-compose.yml, Caddyfile, bootstrap.sh
+frontend/  React + Vite UI (Telegram-style dark theme)
+deploy/    Docker/Caddy/VPS scripts — unused for local, kept for later
 ```
+
+## Privacy details
+
+- Backend binds to `127.0.0.1` — not `0.0.0.0` — so nothing on your LAN can reach it.
+- Password stored as a bcrypt hash (cost 12). Session is a JWT in an httpOnly `SameSite=Strict` cookie.
+- CSP locks `connect-src` to `self`; no third-party scripts, fonts, or images loaded.
+- LM Studio is only reached by the backend. Browsers never speak to it directly.
+- SQLite file is yours. Delete it to wipe everything.
+
+## Later: want it on a VPS?
+
+There's a Docker + Caddy deploy scaffold under `deploy/` with a `bootstrap.sh` for Ubuntu 24.04. It's not needed for local use and is left as-is until you're ready.
 
 ## License
 
