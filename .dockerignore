@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.env
+**/.env.local
+**/*.log
+.git
+.github
+data
+*.sqlite
+deploy/caddy_data
+deploy/caddy_config

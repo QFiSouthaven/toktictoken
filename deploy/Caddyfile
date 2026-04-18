@@ -1,0 +1,24 @@
+{
+	email {$LETSENCRYPT_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Strict security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	# Disable buffering for SSE streaming
+	reverse_proxy app:3000 {
+		flush_interval -1
+		transport http {
+			response_header_timeout 0s
+		}
+	}
+}
