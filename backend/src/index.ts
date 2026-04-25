@@ -6,7 +6,8 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import fstatic from '@fastify/static';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { openDb } from './db/index.js';
 import { LMStudioClient } from './services/lmstudio.js';
@@ -83,8 +84,14 @@ async function main() {
     decorateReply: false,
   });
 
-  const staticDir = resolve(process.cwd(), 'public');
-  if (existsSync(staticDir)) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(here, 'public'),
+    resolve(here, '..', 'public'),
+    resolve(process.cwd(), 'public'),
+  ];
+  const staticDir = candidates.find((p) => existsSync(p));
+  if (staticDir) {
     await app.register(fstatic, {
       root: staticDir,
       prefix: '/',

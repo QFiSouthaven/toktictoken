@@ -8,7 +8,20 @@ Private, self-hosted chat over your own LM Studio. Runs entirely on your machine
 - **LLM**: whatever you load in [LM Studio](https://lmstudio.ai)
 - **Privacy**: no CDN, no external fonts, no telemetry, strict CSP
 
-## Quick start (local)
+## Download & run (Windows)
+
+1. Install **[Node.js 22.13+ or 24 LTS](https://nodejs.org/en/download)** (one-time, ~30 MB).
+2. Open **[LM Studio](https://lmstudio.ai)**, load a model, click **Start Server** on the Developer tab. Keep "Serve on Local Network" **off**.
+3. Grab the latest **`openclaw-windows-x64.zip`** from the [Releases page](https://github.com/QFiSouthaven/toktictoken/releases) (~5 MB).
+4. Right-click → **Extract All**.
+5. Double-click **`start.bat`**. On first run you'll set a password.
+6. Your browser opens at http://127.0.0.1:3000.
+
+To update: download the new zip, replace the `app/` folder, keep your `data/` folder.
+
+## Quick start (dev / from source)
+
+Use this if you want to hack on the code. For just running the app, the **Download & run** section above is much simpler.
 
 Requires **Node 22.13+ or 24 LTS** (uses the built-in `node:sqlite` — no native compile, so no Visual Studio Build Tools needed) and **LM Studio** running with a model loaded and its local server started on port `1234`.
 
@@ -65,6 +78,7 @@ npm run build       # compile backend + bundle frontend
 npm start           # run compiled backend serving the bundled frontend at :3000
 npm test            # unit tests (SSE parser)
 npm run typecheck   # tsc on both workspaces
+npm run pack        # build the Windows portable zip (dist-bundle/)
 ```
 
 ## Layout
