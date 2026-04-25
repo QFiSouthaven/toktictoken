@@ -60,8 +60,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   TMP_HASH_DIR="$(mktemp -d)"
   pushd "$TMP_HASH_DIR" >/dev/null
   npm init -y >/dev/null
-  npm install bcrypt --silent >/dev/null
-  ADMIN_HASH="$(PW="$PW1" node -e "console.log(require('bcrypt').hashSync(process.env.PW, 12))")"
+  npm install bcryptjs --silent >/dev/null
+  ADMIN_HASH="$(PW="$PW1" node -e "console.log(require('bcryptjs').hashSync(process.env.PW, 12))")"
   popd >/dev/null
   rm -rf "$TMP_HASH_DIR"
 

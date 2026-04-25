@@ -17,7 +17,7 @@ Requires **Node 20+** and **LM Studio** running with a model loaded and its loca
 npm install
 
 # 2. set a password + generate secrets (once)
-export ADMIN_PASSWORD_HASH="$(node -e "console.log(require('bcrypt').hashSync(process.argv[1], 12))" 'changeme')"
+export ADMIN_PASSWORD_HASH="$(node -e "console.log(require('bcryptjs').hashSync(process.argv[1], 12))" 'changeme')"
 export JWT_SECRET="$(openssl rand -hex 48)"
 export LM_STUDIO_URL="http://localhost:1234"
 
@@ -35,7 +35,7 @@ Drop them into a shell rc file, or create a tiny loader:
 
 ```bash
 cat > ~/.openclaw.env <<EOF
-export ADMIN_PASSWORD_HASH='$(node -e "console.log(require('bcrypt').hashSync('changeme', 12))")'
+export ADMIN_PASSWORD_HASH='$(node -e "console.log(require('bcryptjs').hashSync('changeme', 12))")'
 export JWT_SECRET='$(openssl rand -hex 48)'
 export LM_STUDIO_URL='http://localhost:1234'
 EOF

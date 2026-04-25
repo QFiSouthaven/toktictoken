@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import type { DB } from '../db/index.js';
 
