@@ -10,7 +10,7 @@ Private, self-hosted chat over your own LM Studio. Runs entirely on your machine
 
 ## Quick start (local)
 
-Requires **Node 20+** and **LM Studio** running with a model loaded and its local server started on port `1234`.
+Requires **Node 22.13+ or 24 LTS** (uses the built-in `node:sqlite` — no native compile, so no Visual Studio Build Tools needed) and **LM Studio** running with a model loaded and its local server started on port `1234`.
 
 ```bash
 # 1. install deps
@@ -54,7 +54,6 @@ To change the password later, regenerate the hash and restart.
 | Model switching | Dropdown in the chat header |
 | System prompt / persona | Settings → "System prompt" (default persona: `openclaw`) |
 | Vision models | Attach an image in the composer — sent as `image_url` content part |
-| Embeddings + RAG | Settings → set embedding model + enable RAG; ingests via upload |
 | Tool / function calling | Backend forwards `tools`/`tool_choice`; `tool_calls` deltas stream through |
 | Sampling params | Settings → temperature, top_p, max_tokens |
 

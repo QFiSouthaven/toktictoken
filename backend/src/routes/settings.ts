@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { DB } from '../db/index.js';
+import { withTx } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const DEFAULTS: Record<string, string> = {
@@ -11,8 +12,6 @@ const DEFAULTS: Record<string, string> = {
   temperature: '0.7',
   top_p: '0.95',
   max_tokens: '2048',
-  rag_enabled: 'false',
-  embedding_model: '',
 };
 
 const putBody = z.record(z.string(), z.string());
@@ -34,10 +33,9 @@ export function registerSettingsRoutes(app: FastifyInstance, db: DB) {
     const stmt = db.prepare(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     );
-    const tx = db.transaction((entries: [string, string][]) => {
-      for (const [k, v] of entries) stmt.run(k, v);
+    withTx(db, () => {
+      for (const [k, v] of Object.entries(parsed.data)) stmt.run(k, v);
     });
-    tx(Object.entries(parsed.data));
     return { ok: true };
   });
 }

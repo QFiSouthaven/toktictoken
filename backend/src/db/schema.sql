@@ -44,20 +44,3 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS documents (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  mime TEXT NOT NULL,
-  path TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS document_chunks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  ord INTEGER NOT NULL,
-  content TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_chunks_doc ON document_chunks(document_id, ord);

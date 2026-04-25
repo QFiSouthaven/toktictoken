@@ -70,14 +70,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               placeholder="leave blank for LM Studio default"
             />
           </Field>
-          <Field label="Embedding model (for RAG)">
-            <input
-              className="input"
-              value={form.embedding_model ?? ''}
-              onChange={(e) => set('embedding_model', e.target.value)}
-              placeholder="e.g. text-embedding-nomic-embed-text-v1.5"
-            />
-          </Field>
           <div className="grid3">
             <Field label="Temperature">
               <input
@@ -101,16 +93,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               />
             </Field>
           </div>
-          <Field label="RAG enabled">
-            <select
-              className="input"
-              value={form.rag_enabled ?? 'false'}
-              onChange={(e) => set('rag_enabled', e.target.value)}
-            >
-              <option value="false">off</option>
-              <option value="true">on</option>
-            </select>
-          </Field>
         </div>
         <footer className="modal-foot">
           <button className="btn ghost" onClick={onClose}>
