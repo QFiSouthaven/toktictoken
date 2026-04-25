@@ -92,6 +92,14 @@ export function Composer({ onSend, onStop, streaming }: Props) {
           rows={1}
           placeholder="Message openclaw…"
           value={text}
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          autoComplete="off"
+          translate="no"
+          data-gramm="false"
+          data-gramm_editor="false"
+          data-enable-grammarly="false"
           onChange={(e) => {
             setText(e.target.value);
             autogrow();

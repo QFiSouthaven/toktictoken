@@ -30,6 +30,7 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
           type="password"
           autoFocus
           autoComplete="current-password"
+          spellCheck={false}
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

@@ -79,10 +79,24 @@ deploy/    Docker/Caddy/VPS scripts — unused for local, kept for later
 ## Privacy details
 
 - Backend binds to `127.0.0.1` — not `0.0.0.0` — so nothing on your LAN can reach it.
-- Password stored as a bcrypt hash (cost 12). Session is a JWT in an httpOnly `SameSite=Strict` cookie.
-- CSP locks `connect-src` to `self`; no third-party scripts, fonts, or images loaded.
+- Vite dev server pinned to `127.0.0.1` (no IPv6 fallback).
+- Password stored as a bcryptjs hash (cost 12). Session is a JWT in an httpOnly `SameSite=Strict` cookie. Auth responses are `Cache-Control: no-store`.
+- CSP locks `connect-src` to `self`, `img-src` to `self/data/blob` — markdown image URLs from the model can't phone home.
+- `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`, `Referrer-Policy: no-referrer`, `Permissions-Policy` denies geolocation/mic/camera/payment.
+- Composer + system-prompt textareas have `spellcheck=false`, `translate="no"`, `autocomplete="off"`, and `data-gramm` markers — Chrome/Edge spellcheck, Google Translate, and Grammarly will not see what you type.
 - LM Studio is only reached by the backend. Browsers never speak to it directly.
 - SQLite file is yours. Delete it to wipe everything.
+- No external fonts, no CDN, no telemetry libs. All assets bundled.
+
+### What you control
+
+| Risk | Mitigation |
+|---|---|
+| LM Studio exposed on LAN | In LM Studio: keep "Serve on Local Network" **off**. Only `127.0.0.1:1234`. |
+| Disk theft / lost laptop | Use BitLocker / FileVault. The SQLite file is plaintext. |
+| Browser extensions reading the page | Use a clean profile, or disable Grammarly etc. for `localhost`. |
+| Hotel WiFi MITM | Doesn't apply — all traffic is loopback (`127.0.0.1`). The hotel network sees nothing. |
+| Swap / hibernation files | Encrypt your disk; don't run on shared machines. |
 
 ## Later: want it on a VPS?
 

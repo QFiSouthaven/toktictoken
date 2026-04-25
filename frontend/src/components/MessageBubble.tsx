@@ -14,7 +14,7 @@ export function MessageBubble({ message }: { message: UiMessage }) {
               a.kind === 'image' ? (
                 <img key={i} src={a.url} alt="" className="bubble-img" />
               ) : (
-                <a key={i} href={a.url} className="bubble-file" target="_blank" rel="noreferrer">
+                <a key={i} href={a.url} className="bubble-file" target="_blank" rel="noopener noreferrer">
                   📎 attachment
                 </a>
               ),

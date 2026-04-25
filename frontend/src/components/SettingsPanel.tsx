@@ -53,6 +53,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <textarea
               className="input"
               rows={4}
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              translate="no"
+              data-gramm="false"
               value={form.system_prompt ?? ''}
               onChange={(e) => set('system_prompt', e.target.value)}
             />

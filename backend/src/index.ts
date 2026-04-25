@@ -37,12 +37,25 @@ async function main() {
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
         fontSrc: ["'self'"],
+        mediaSrc: ["'self'", 'blob:'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         frameAncestors: ["'none'"],
+        formAction: ["'self'"],
       },
     },
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'no-referrer' },
+  });
+
+  app.addHook('onSend', async (req, reply) => {
+    if (req.url.startsWith('/api/auth/')) {
+      reply.header('Cache-Control', 'no-store');
+      reply.header('Pragma', 'no-cache');
+    }
+    reply.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
   });
   await app.register(rateLimit, { global: false });
   await app.register(cookie);
