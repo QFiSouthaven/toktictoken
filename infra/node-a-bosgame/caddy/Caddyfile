@@ -1,0 +1,56 @@
+# Caddyfile — Node A reverse proxy
+#
+# Two TLS strategies:
+#   1. Tailscale-issued certs (recommended): use `tls { get_certificate tailscale }`.
+#      Requires `tailscale` running on the host and Tailscale HTTPS enabled in admin.
+#   2. Self-signed for pure-LAN .local hostnames: use `tls internal`.
+#
+# Pick one block style (Tailscale preferred). Replace `*.bosgame.local` hostnames
+# in .env if you'd rather use the Tailscale MagicDNS name.
+
+# ---------- Open WebUI: daily-driver chat ----------
+{$CHAT_HOST} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy open-webui:8080
+}
+
+# ---------- n8n: persistent automation ----------
+{$N8N_HOST} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy n8n:5678 {
+        # n8n needs websockets for the editor.
+        flush_interval -1
+    }
+}
+
+# ---------- LiteLLM: API endpoint ----------
+{$LITELLM_HOST} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy litellm:4000
+}
+
+# ---------- Letta: stateful-agent runtime ----------
+{$LETTA_HOST} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy letta:8283
+}
+
+# ---------- Uptime Kuma: status page ----------
+{$KUMA_HOST} {
+    tls internal
+    encode zstd gzip
+    reverse_proxy uptime-kuma:3001 {
+        flush_interval -1
+    }
+}
+
+# ---------- Dify (Phase 2 — set up separately, see ./dify/) ----------
+# {$DIFY_HOST} {
+#     tls internal
+#     encode zstd gzip
+#     reverse_proxy dify-nginx:80
+# }

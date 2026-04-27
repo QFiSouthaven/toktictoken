@@ -1,0 +1,250 @@
+name: ai-node-a
+
+# Node A — Bosgame M5 (Ryzen AI Max+ 395, 128 GB unified, Radeon 8060S)
+# Primary inference + orchestration stack.
+# Phase 1 services: llama-server, open-webui
+# Phase 2 services: litellm, postgres, qdrant, letta, n8n, caddy, watchtower, uptime-kuma
+# Dify lives in ./dify (see README — clone the official Dify compose into that dir).
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1. llama-server (Vulkan / AMDVLK) — primary big-model inference on Strix Halo
+  # ---------------------------------------------------------------------------
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+    container_name: llama-server
+    <<: [*restart, *logging]
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    volumes:
+      - ${MODELS_DIR:-/mnt/nvme/models}:/models:ro
+    networks:
+      - ai
+    expose:
+      - "8080"
+    environment:
+      # AMDVLK is the token-gen champion on Strix Halo per April 2026 benchmarks.
+      # If the system also has RADV available, set MESA_VK_DEVICE_SELECT to pick it.
+      AMD_VULKAN_ICD: "AMDVLK"
+    command: >
+      -m /models/${PRIMARY_MODEL_GGUF}
+      --host 0.0.0.0 --port 8080
+      --jinja
+      --metrics
+      --n-gpu-layers ${NGL:-999}
+      --ctx-size ${CTX:-32768}
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --parallel ${PARALLEL:-2}
+      --cont-batching
+      --threads ${THREADS:-12}
+      --alias primary
+
+  # ---------------------------------------------------------------------------
+  # 2. LiteLLM Proxy — single OpenAI-compatible endpoint, model routing, fallbacks
+  # ---------------------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm
+    <<: [*restart, *logging]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ai
+    expose:
+      - "4000"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: postgres://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      STORE_MODEL_IN_DB: "true"
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+
+  # ---------------------------------------------------------------------------
+  # 3. Postgres — backs LiteLLM (logs, keys, virtual users)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # 4. Qdrant — vector DB for RAG and Letta
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  # ---------------------------------------------------------------------------
+  # 5. Letta — stateful-agent memory runtime (formerly MemGPT)
+  # ---------------------------------------------------------------------------
+  letta:
+    image: letta/letta:latest
+    container_name: letta
+    <<: [*restart, *logging]
+    depends_on:
+      - litellm
+      - qdrant
+    networks:
+      - ai
+    expose:
+      - "8283"
+    volumes:
+      - letta-data:/root/.letta
+    environment:
+      # Letta talks to LiteLLM as if it were OpenAI — privacy preserved.
+      OPENAI_API_BASE: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      LETTA_PG_URI: postgres://litellm:${POSTGRES_PASSWORD}@postgres:5432/letta
+      LETTA_QDRANT_URL: http://qdrant:6333
+
+  # ---------------------------------------------------------------------------
+  # 6. n8n — persistent automation engine (cron, webhooks, AI nodes)
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    expose:
+      - "5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST:-n8n.bosgame.local}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: https
+      WEBHOOK_URL: https://${N8N_HOST:-n8n.bosgame.local}/
+      GENERIC_TIMEZONE: ${TZ:-America/New_York}
+      N8N_DEFAULT_BINARY_DATA_MODE: filesystem
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 168
+      # Point n8n's AI nodes at the local router by default.
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+
+  # ---------------------------------------------------------------------------
+  # 7. Open WebUI — daily-driver chat UI, prompt library, RAG, voice
+  # ---------------------------------------------------------------------------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    <<: [*restart, *logging]
+    depends_on:
+      - litellm
+    networks:
+      - ai
+    expose:
+      - "8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      # All chat traffic routes through LiteLLM — single point of policy + logging.
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      ENABLE_OLLAMA_API: "false"
+      WEBUI_AUTH: "true"
+      DEFAULT_MODELS: ${DEFAULT_MODELS:-default-smart}
+
+  # ---------------------------------------------------------------------------
+  # 8. Caddy — reverse proxy with auto-TLS via Tailscale
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # ---------------------------------------------------------------------------
+  # 9. Watchtower — opt-in container auto-updates (set schedule in .env)
+  # ---------------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: ${WATCHTOWER_SCHEDULE:-0 0 4 * * SUN}
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      WATCHTOWER_NOTIFICATION_REPORT: "true"
+
+  # ---------------------------------------------------------------------------
+  # 10. Uptime Kuma — service health + alerts
+  # ---------------------------------------------------------------------------
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    <<: [*restart, *logging]
+    networks:
+      - ai
+    expose:
+      - "3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+
+networks:
+  ai:
+    name: ai
+    driver: bridge
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  letta-data:
+  n8n-data:
+  open-webui-data:
+  caddy-data:
+  caddy-config:
+  uptime-kuma-data:

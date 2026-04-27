@@ -1,0 +1,84 @@
+# LiteLLM Proxy config — single OpenAI-compatible router for both nodes.
+#
+# Hostnames assume both nodes are on the same Docker bridge or Tailscale net.
+# `node-b.local` resolves to the desktop. Adjust to match your DNS / hosts file.
+#
+# Three primary "logical" model names exposed to clients:
+#   default-smart  — big model on Node A (Strix Halo)
+#   default-fast   — small model on Node B (RTX 4070), Node A as fallback
+#   embed          — embeddings on Node B
+#
+# Speculative-decoding-enabled targets are also exposed for Phase 5.
+
+model_list:
+
+  # --- Node A: primary smart model (Strix Halo, big memory) ---
+  - model_name: default-smart
+    litellm_params:
+      model: openai/primary
+      api_base: http://llama-server:8080/v1
+      api_key: "none"
+    model_info:
+      mode: chat
+
+  # Explicit alias when the user wants to pin to the Strix Halo node by name.
+  - model_name: strix-halo-primary
+    litellm_params:
+      model: openai/primary
+      api_base: http://llama-server:8080/v1
+      api_key: "none"
+
+  # --- Node B: fast small model (CUDA RTX 4070) ---
+  - model_name: default-fast
+    litellm_params:
+      model: openai/fast
+      api_base: http://node-b.local:8080/v1
+      api_key: "none"
+      timeout: 30
+    model_info:
+      mode: chat
+
+  # --- Node B: embeddings ---
+  - model_name: embed
+    litellm_params:
+      model: openai/bge-m3
+      api_base: http://node-b.local:8081/v1
+      api_key: "none"
+    model_info:
+      mode: embedding
+
+  # --- Node B: reranker (Phase 3+) ---
+  - model_name: rerank
+    litellm_params:
+      model: openai/bge-reranker-v2-m3
+      api_base: http://node-b.local:8082/v1
+      api_key: "none"
+
+router_settings:
+  routing_strategy: simple-shuffle
+  # If Node B is offline, default-fast falls back to Node A's primary.
+  fallbacks:
+    - default-fast: ["default-smart"]
+    - embed: ["default-smart"]
+  # Quick-cut latency thresholds; LiteLLM will retry on the fallback.
+  num_retries: 2
+  timeout: 60
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  # Useful for prompt engineering — saves token counts per request.
+  success_callback: ["postgres"]
+  failure_callback: ["postgres"]
+  cache: true
+  cache_params:
+    type: local
+    ttl: 600
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  # Disable telemetry — local-only, privacy-first.
+  disable_spend_logs: false
+  disable_master_key_return: true
