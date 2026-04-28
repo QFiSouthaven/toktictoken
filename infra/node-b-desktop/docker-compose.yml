@@ -1,0 +1,110 @@
+name: ai-node-b
+
+# Node B — Desktop (RTX 4070 12 GB, i7-13700K, 64 GB DDR5).
+# Fast small-model node + draft model for cross-node speculative decoding +
+# embeddings + reranker.
+#
+# Prereqs on host:
+#   - NVIDIA driver >= 550
+#   - nvidia-container-toolkit installed and configured for Docker
+#   - Test:  docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu24.04 nvidia-smi
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1. llama-server (CUDA) — fast small-model inference on RTX 4070
+  #    Exposed on :8080 as the "fast" model.
+  # ---------------------------------------------------------------------------
+  llama-server-fast:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-server-fast
+    <<: [*restart, *logging, *gpu]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${MODELS_DIR:-/mnt/models}:/models:ro
+    command: >
+      -m /models/${FAST_MODEL_GGUF}
+      --host 0.0.0.0 --port 8080
+      --jinja --metrics
+      --n-gpu-layers 999
+      --ctx-size ${FAST_CTX:-16384}
+      --cache-type-k q8_0
+      --cache-type-v q8_0
+      --parallel 4
+      --cont-batching
+      --alias fast
+
+  # ---------------------------------------------------------------------------
+  # 2. llama-server (CUDA) — embeddings (bge-m3 or nomic-embed-text-v2)
+  # ---------------------------------------------------------------------------
+  llama-server-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-server-embed
+    <<: [*restart, *logging, *gpu]
+    ports:
+      - "8081:8080"
+    volumes:
+      - ${MODELS_DIR:-/mnt/models}:/models:ro
+    command: >
+      -m /models/${EMBED_MODEL_GGUF}
+      --host 0.0.0.0 --port 8080
+      --embedding
+      --pooling mean
+      --n-gpu-layers 999
+      --ctx-size ${EMBED_CTX:-8192}
+      --alias bge-m3
+
+  # ---------------------------------------------------------------------------
+  # 3. llama-server (CUDA) — reranker (bge-reranker-v2-m3). Optional.
+  # ---------------------------------------------------------------------------
+  llama-server-rerank:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-server-rerank
+    <<: [*restart, *logging, *gpu]
+    ports:
+      - "8082:8080"
+    volumes:
+      - ${MODELS_DIR:-/mnt/models}:/models:ro
+    command: >
+      -m /models/${RERANK_MODEL_GGUF}
+      --host 0.0.0.0 --port 8080
+      --reranking
+      --n-gpu-layers 999
+      --alias bge-reranker-v2-m3
+    profiles: ["full"]
+
+  # ---------------------------------------------------------------------------
+  # 4. llama.cpp RPC worker — exposes this GPU to Node A's RPC orchestrator.
+  #    Phase 5 (clustering / speculative decoding). Off by default.
+  # ---------------------------------------------------------------------------
+  rpc-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: rpc-server
+    <<: [*restart, *logging, *gpu]
+    ports:
+      - "50052:50052"
+    entrypoint: ["/app/rpc-server"]
+    command: >
+      --host 0.0.0.0 --port 50052
+      --mem ${RPC_RESERVE_MIB:-10240}
+    profiles: ["cluster"]
