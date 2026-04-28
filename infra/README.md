@@ -43,22 +43,34 @@ Designed for: a **no-code AI prompt developer** who wants **100% local privacy**
 
 ## Phase 1 — Node A baseline (Strix Halo → working chat)
 
-### 1.1 Install Ubuntu
+### 1.1 Install Ubuntu — pick ONE of two paths
 
-- Boot the USB, install Ubuntu 24.04.2 LTS.
+**Path A (recommended): unattended autoinstall.** All of §1.2–§1.4 below happens automatically. Use `infra/node-a-bosgame/autoinstall.yaml`:
+
+1. Edit the file and replace the three `<<<REPLACE_ME_*>>>` placeholders:
+   - `<<<REPLACE_ME_PASSWORD_HASH>>>` — generate with `mkpasswd -m sha-512` (apt install whois first).
+   - `<<<REPLACE_ME_DISK_PASSWORD>>>` — strong LUKS passphrase (≥ 20 chars).
+   - `<<<REPLACE_ME_PUBKEY>>>` — your SSH public key (cat ~/.ssh/id_ed25519.pub).
+2. Write Ubuntu Server 24.04.2 LTS ISO to one USB stick (Rufus / `dd`).
+3. Format a second USB FAT32 with label **`CIDATA`**. Drop `autoinstall.yaml` on it as `user-data` and create an empty `meta-data` file.
+4. Boot the M5 from the Ubuntu USB (with CIDATA inserted). Confirm partitioning when it prompts. Walk away — comes back as a fully provisioned host with Docker, AMDVLK, Tailscale, and the repo cloned to `/srv/ai`. Skip to §1.5.
+
+**Path B (interactive): step-by-step manual install.** Use this if you want to learn each layer.
+
+- Boot the USB, install Ubuntu Server 24.04.2 LTS (Desktop also works).
 - Pick **full disk encryption** (LUKS) — it's a privacy lab.
 - Username: `ai` (matches the systemd unit). Password: strong.
-- After first boot:
+- After first boot, run §1.2 → §1.4 by hand:
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
 sudo apt install -y linux-generic-hwe-24.04 git curl wget htop iperf3 \
                     libvulkan1 mesa-vulkan-drivers vulkan-tools radeontop \
-                    huggingface-cli restic ufw
+                    huggingface-cli restic ufw whois
 sudo reboot
 ```
 
-### 1.2 Install AMDVLK (Vulkan ICD)
+### 1.2 Install AMDVLK (Vulkan ICD) — Path B only
 
 AMDVLK currently produces the highest token-generation throughput on Strix Halo
 (beats ROCm 7.x by ~16% per March 2026 benchmarks).
@@ -74,7 +86,7 @@ sudo apt install -y /tmp/amdvlk.deb
 vulkaninfo --summary | grep -i amdvlk
 ```
 
-### 1.3 Install Docker
+### 1.3 Install Docker — Path B only
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
@@ -83,13 +95,15 @@ sudo usermod -aG video,render $USER
 newgrp docker   # or log out / back in
 ```
 
-### 1.4 Install Tailscale
+### 1.4 Install Tailscale — Path B only
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sudo sh
 sudo tailscale up --ssh
 # Enable HTTPS in the Tailscale admin console for cert auto-issuance.
 ```
+
+> **Path A users**: just run `sudo tailscale up --ssh` once after first boot.
 
 ### 1.5 Clone this repo and bring up the Node A stack
 
@@ -182,10 +196,14 @@ Then uncomment the Dify block in `caddy/Caddyfile` and `docker compose restart c
 
 ## Phase 3 — Node B integration (RTX 4070 desktop)
 
-### 3.1 Install Ubuntu + NVIDIA + Docker
+### 3.1 Install Ubuntu + NVIDIA + Docker — pick ONE path
+
+**Path A (recommended): unattended autoinstall.** Use `infra/node-b-desktop/autoinstall.yaml`. Same procedure as Node A's Path A — replace the three `<<<REPLACE_ME_*>>>` placeholders, write Ubuntu Server ISO to one USB, write `autoinstall.yaml` as `user-data` on a CIDATA USB, boot. The autoinstall handles `nvidia-driver-550`, `nvidia-container-toolkit`, Docker, and Tailscale. Skip to §3.2.
+
+**Path B (interactive):**
 
 ```bash
-# Ubuntu 24.04.2 LTS Desktop install (same as Node A).
+# Ubuntu Server 24.04.2 LTS install.
 sudo apt update && sudo apt full-upgrade -y
 sudo apt install -y nvidia-driver-550 git curl iperf3
 sudo reboot
@@ -349,6 +367,7 @@ to the M5's USB4 port.
 infra/
 ├── README.md                          ← you are here
 ├── node-a-bosgame/
+│   ├── autoinstall.yaml               # unattended Ubuntu Server installer (Path A)
 │   ├── docker-compose.yml             # primary stack
 │   ├── .env.example                   # secrets template
 │   ├── litellm/config.yaml            # routing rules
@@ -356,6 +375,7 @@ infra/
 │   ├── llama-server/run.sh            # bare-metal alt launch script
 │   └── systemd/llama-server.service   # bare-metal systemd unit
 ├── node-b-desktop/
+│   ├── autoinstall.yaml               # unattended Ubuntu Server installer (Path A)
 │   ├── docker-compose.yml             # CUDA: fast / embed / rerank / RPC
 │   └── .env.example
 └── scripts/

@@ -1,0 +1,207 @@
+#cloud-config
+# ============================================================================
+# Node B — Desktop (RTX 4070, i7-13700K, 64 GB DDR5) autoinstall
+# ============================================================================
+# Ubuntu Server 24.04.2 LTS unattended installer.
+#
+# Pairs with: infra/node-b-desktop/docker-compose.yml
+# After this completes, follow infra/README.md §3.2 onwards.
+#
+# ----------------------------------------------------------------------------
+# BEFORE USING — do all of these:
+# ----------------------------------------------------------------------------
+#   1. Generate a real password hash:
+#        mkpasswd -m sha-512    # (apt install whois if missing)
+#      Replace `<<<REPLACE_ME_PASSWORD_HASH>>>` below.
+#
+#   2. Replace `<<<REPLACE_ME_DISK_PASSWORD>>>` with a strong LUKS passphrase.
+#
+#   3. Paste your SSH public key(s) into `ssh.authorized-keys`.
+#
+#   4. (Optional) If you have multiple disks, adjust `storage` to target the
+#      correct one — default `lvm` layout uses the largest.
+#
+# ----------------------------------------------------------------------------
+# HOW TO BOOT THIS:  (see Node A autoinstall.yaml header)
+# ============================================================================
+
+autoinstall:
+  version: 1
+
+  refresh-installer:
+    update: true
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  network:
+    version: 2
+    ethernets:
+      any:
+        match:
+          name: "en*"
+        dhcp4: true
+        dhcp6: false
+
+  identity:
+    hostname: rtxbox
+    username: ai
+    password: "<<<REPLACE_ME_PASSWORD_HASH>>>"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys:
+      - "ssh-ed25519 AAAA<<<REPLACE_ME_PUBKEY>>> ai@admin"
+
+  interactive-sections:
+    - storage
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+      password: "<<<REPLACE_ME_DISK_PASSWORD>>>"
+
+  packages:
+    - linux-generic-hwe-24.04
+    - openssh-server
+    - ca-certificates
+    - curl
+    - wget
+    - gnupg
+    - git
+    - htop
+    - iperf3
+    - jq
+    - ufw
+    - python3-pip
+    - python3-venv
+    - tmux
+    - vim
+    - rsync
+    - whois
+    # NVIDIA driver — pulls the recommended version for the kernel.
+    # Driver 550+ ships CUDA 12.4 user-space. Update post-install if newer is
+    # available via `ubuntu-drivers devices` / `apt install nvidia-driver-XXX`.
+    - nvidia-driver-550
+    - ubuntu-drivers-common
+
+  updates: all
+  shutdown: reboot
+
+  late-commands:
+
+    # ----- 1. Sudoers: passwordless sudo for the `ai` user -----
+    - curtin in-target -- bash -c 'echo "ai ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ai-nopasswd && chmod 440 /etc/sudoers.d/90-ai-nopasswd'
+
+    # ----- 2. Add `ai` to sudo + docker (docker group created in step 3) -----
+    - curtin in-target -- bash -c 'getent group docker || groupadd -r docker'
+    - curtin in-target -- usermod -aG sudo,docker ai
+
+    # ----- 3. Install Docker Engine + Compose v2 -----
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
+          > /etc/apt/sources.list.d/docker.list
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        systemctl enable docker
+      '
+
+    # ----- 4. Install nvidia-container-toolkit so Docker can see the RTX 4070 -----
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+          | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+          | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" \
+          > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+        apt-get update
+        apt-get install -y nvidia-container-toolkit
+        nvidia-ctk runtime configure --runtime=docker
+        # Docker will be restarted on first boot; safe to leave alone here.
+      '
+
+    # ----- 5. Install Tailscale -----
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+          | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+          | tee /etc/apt/sources.list.d/tailscale.list
+        apt-get update
+        apt-get install -y tailscale
+        systemctl enable tailscaled
+      '
+
+    # ----- 6. Install Hugging Face CLI -----
+    - curtin in-target -- pip3 install --break-system-packages 'huggingface_hub[cli]'
+
+    # ----- 7. Pre-create directories -----
+    - curtin in-target -- install -d -o ai -g ai /srv/ai
+    - curtin in-target -- install -d -o ai -g ai /mnt/models
+
+    # ----- 8. Clone the repo -----
+    - curtin in-target -- sudo -u ai git clone https://github.com/qfisouthaven/toktictoken /srv/ai
+
+    # ----- 9. Firewall (not enabled until first boot) -----
+    - |
+      curtin in-target -- bash -c '
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow ssh
+        # Allow the LiteLLM router on Node A to reach our llama-server ports.
+        ufw allow from 192.168.0.0/16 to any port 8080
+        ufw allow from 192.168.0.0/16 to any port 8081
+        ufw allow from 192.168.0.0/16 to any port 8082
+        ufw allow from 192.168.0.0/16 to any port 50052  # RPC (Phase 5)
+        ufw allow from 100.64.0.0/10  to any port 8080
+        ufw allow from 100.64.0.0/10  to any port 8081
+        ufw allow from 100.64.0.0/10  to any port 8082
+        ufw allow from 100.64.0.0/10  to any port 50052
+      '
+
+    # ----- 10. motd reminder -----
+    - |
+      curtin in-target -- bash -c 'cat > /etc/motd <<MOTD
+      ============================================================
+       Node B — RTX 4070 desktop — autoinstall complete.
+      ============================================================
+       Next steps (see /srv/ai/infra/README.md §3.2 onwards):
+         1. sudo tailscale up --ssh
+         2. nvidia-smi                                    # confirm driver
+         3. docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu24.04 nvidia-smi   # confirm container GPU
+         4. cd /srv/ai/infra/node-b-desktop
+         5. cp .env.example .env  &&  edit
+         6. ../scripts/pull-models.sh node-b
+         7. docker compose up -d llama-server-fast llama-server-embed
+         8. sudo ufw enable
+      ============================================================
+      MOTD'
+
+  user-data:
+    timezone: America/New_York
+    package_update: true
+    package_upgrade: true
+    write_files:
+      - path: /etc/sysctl.d/99-ai-server.conf
+        content: |
+          # Persistent AI server tuning
+          vm.swappiness=10
+          vm.max_map_count=262144
+          net.core.somaxconn=4096
+        permissions: '0644'
+      # Blacklist nouveau (ensures only the proprietary NVIDIA driver is loaded).
+      - path: /etc/modprobe.d/blacklist-nouveau.conf
+        content: |
+          blacklist nouveau
+          options nouveau modeset=0
+        permissions: '0644'

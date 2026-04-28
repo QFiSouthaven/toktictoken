@@ -1,0 +1,229 @@
+#cloud-config
+# ============================================================================
+# Node A — Bosgame M5 (Ryzen AI Max+ 395 "Strix Halo") autoinstall
+# ============================================================================
+# Ubuntu Server 24.04.2 LTS unattended installer.
+#
+# Pairs with: infra/node-a-bosgame/docker-compose.yml
+# After this completes, follow infra/README.md from §1.5 onwards
+# (clone-repo / fill .env / pull models / docker compose up).
+#
+# ----------------------------------------------------------------------------
+# BEFORE USING — do all of these:
+# ----------------------------------------------------------------------------
+#   1. Generate a real password hash:
+#        mkpasswd -m sha-512    # (apt install whois if missing)
+#      Replace `<<<REPLACE_ME_PASSWORD_HASH>>>` below.
+#
+#   2. Replace `<<<REPLACE_ME_DISK_PASSWORD>>>` with a strong LUKS passphrase
+#      (≥ 20 chars). Treat this file as a secret afterwards.
+#
+#   3. Paste your SSH public key(s) into `ssh.authorized-keys`.
+#
+#   4. (Optional) Adjust `storage.layout` if you have multiple disks and want
+#      to target a specific one — the default `lvm` layout uses the largest.
+#
+# ----------------------------------------------------------------------------
+# HOW TO BOOT THIS:
+# ----------------------------------------------------------------------------
+#   Option 1 — USB stick alongside the Ubuntu Server ISO:
+#     1. Write Ubuntu 24.04.2 LTS Server ISO to one USB stick.
+#     2. Format a second USB stick FAT32 with label "CIDATA".
+#     3. Drop this file on it as `user-data` and create an empty `meta-data`.
+#     4. Boot the M5 from the Ubuntu USB; it will detect CIDATA and run unattended.
+#
+#   Option 2 — kernel parameter (advanced):
+#     At GRUB, edit boot line to add:
+#       autoinstall ds=nocloud-net;s=https://your-host/path/
+# ============================================================================
+
+autoinstall:
+  version: 1
+
+  # --- Refresh the installer itself before running ---
+  refresh-installer:
+    update: true
+
+  # --- Locale / keyboard ---
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # --- Network: DHCP on the first wired interface ---
+  network:
+    version: 2
+    ethernets:
+      any:
+        match:
+          name: "en*"
+        dhcp4: true
+        dhcp6: false
+
+  # --- Identity ---
+  identity:
+    hostname: bosgame
+    username: ai
+    # Generated with:  mkpasswd -m sha-512
+    password: "<<<REPLACE_ME_PASSWORD_HASH>>>"
+
+  # --- SSH ---
+  ssh:
+    install-server: true
+    # Set to false once you've confirmed your SSH keys work.
+    allow-pw: true
+    authorized-keys:
+      - "ssh-ed25519 AAAA<<<REPLACE_ME_PUBKEY>>> ai@admin"
+
+  # --- Storage: full-disk LVM with LUKS encryption ---
+  # Confirm partitioning interactively (safer when wiping Windows).
+  # Comment out `interactive-sections` to go fully unattended.
+  interactive-sections:
+    - storage
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+      password: "<<<REPLACE_ME_DISK_PASSWORD>>>"
+
+  # --- Apt packages installed during install (HWE kernel + base userland) ---
+  packages:
+    - linux-generic-hwe-24.04
+    - openssh-server
+    - ca-certificates
+    - curl
+    - wget
+    - gnupg
+    - git
+    - htop
+    - iperf3
+    - jq
+    - ufw
+    - python3-pip
+    - python3-venv
+    - restic
+    # Vulkan stack — used by llama.cpp on Strix Halo (AMDVLK ICD installed below).
+    - libvulkan1
+    - mesa-vulkan-drivers
+    - vulkan-tools
+    - radeontop
+    # Useful misc
+    - tmux
+    - vim
+    - rsync
+    - whois  # for mkpasswd later
+
+  # --- Server upgrades during install ---
+  updates: all
+  shutdown: reboot
+
+  # --- Late commands: run after package install, before reboot ---
+  # All commands run in the installer environment. Use `curtin in-target --` to
+  # execute inside the target system (chroot of /target).
+  late-commands:
+
+    # ----- 1. Sudoers: passwordless sudo for the `ai` user (lock down later) -----
+    - curtin in-target -- bash -c 'echo "ai ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ai-nopasswd && chmod 440 /etc/sudoers.d/90-ai-nopasswd'
+
+    # ----- 2. Add `ai` to GPU + Docker groups -----
+    # `docker` group is created by the Docker install in step 4; create it now
+    # so it exists when usermod runs.
+    - curtin in-target -- bash -c 'getent group docker || groupadd -r docker'
+    - curtin in-target -- usermod -aG sudo,docker,video,render,plugdev ai
+
+    # ----- 3. Install AMDVLK (Vulkan ICD) — token-gen champion on Strix Halo -----
+    # Per March 2026 Phoronix benchmarks: ~16% faster tok/s than ROCm 7.x.
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        URL=$(curl -fsSL https://api.github.com/repos/GPUOpen-Drivers/AMDVLK/releases/latest \
+              | grep browser_download_url | grep _amd64.deb | head -1 | cut -d "\"" -f 4)
+        echo "Installing AMDVLK from: $URL"
+        wget -O /tmp/amdvlk.deb "$URL"
+        apt-get install -y /tmp/amdvlk.deb || dpkg -i /tmp/amdvlk.deb || true
+        apt-get install -fy
+        rm -f /tmp/amdvlk.deb
+      '
+
+    # ----- 4. Install Docker Engine + Compose v2 -----
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable" \
+          > /etc/apt/sources.list.d/docker.list
+        apt-get update
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        systemctl enable docker
+      '
+
+    # ----- 5. Install Tailscale (do not auto-up; user runs `sudo tailscale up --ssh`) -----
+    - |
+      curtin in-target -- bash -c '
+        set -e
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+          | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+          | tee /etc/apt/sources.list.d/tailscale.list
+        apt-get update
+        apt-get install -y tailscale
+        systemctl enable tailscaled
+      '
+
+    # ----- 6. Install Hugging Face CLI (for pull-models.sh) -----
+    - curtin in-target -- pip3 install --break-system-packages 'huggingface_hub[cli]'
+
+    # ----- 7. Pre-create directories the stack expects -----
+    - curtin in-target -- install -d -o ai -g ai /srv/ai
+    - curtin in-target -- install -d -o ai -g ai /mnt/nvme/models
+    - curtin in-target -- install -d -m 0750 /var/log/llama-server
+
+    # ----- 8. Clone the repo so the user can `cd /srv/ai/infra/node-a-bosgame` immediately -----
+    - curtin in-target -- sudo -u ai git clone https://github.com/qfisouthaven/toktictoken /srv/ai
+
+    # ----- 9. Firewall: deny incoming except SSH + LAN/Tailscale 443 (enabled at first boot) -----
+    - |
+      curtin in-target -- bash -c '
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw allow ssh
+        ufw allow from 192.168.0.0/16 to any port 443
+        ufw allow from 10.0.0.0/8     to any port 443
+        ufw allow from 172.16.0.0/12  to any port 443
+        ufw allow from 100.64.0.0/10  to any port 443  # Tailscale
+        # Do not enable here — leave to first-boot to avoid locking out installer.
+      '
+
+    # ----- 10. First-login motd reminder of next steps -----
+    - |
+      curtin in-target -- bash -c 'cat > /etc/motd <<MOTD
+      ============================================================
+       Node A — Bosgame M5 (Strix Halo) — autoinstall complete.
+      ============================================================
+       Next steps (see /srv/ai/infra/README.md §1.5 onwards):
+         1. sudo tailscale up --ssh
+         2. cd /srv/ai/infra/node-a-bosgame
+         3. cp .env.example .env  &&  edit (generate secrets with openssl rand -hex 32)
+         4. ../scripts/pull-models.sh node-a
+         5. docker compose up -d llama-server open-webui
+         6. ../scripts/healthcheck.sh
+         7. sudo ufw enable   # only after confirming SSH still works
+      ============================================================
+      MOTD'
+
+  # --- User-data passthrough for cloud-init (extra config) ---
+  user-data:
+    timezone: America/New_York
+    package_update: true
+    package_upgrade: true
+    write_files:
+      - path: /etc/sysctl.d/99-ai-server.conf
+        content: |
+          # Persistent AI server tuning
+          vm.swappiness=10
+          vm.max_map_count=262144
+          net.core.somaxconn=4096
+          fs.inotify.max_user_watches=524288
+        permissions: '0644'
