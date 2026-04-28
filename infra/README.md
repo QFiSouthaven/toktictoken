@@ -52,7 +52,7 @@ Designed for: a **no-code AI prompt developer** who wants **100% local privacy**
    - `<<<REPLACE_ME_DISK_PASSWORD>>>` — strong LUKS passphrase (≥ 20 chars).
    - `<<<REPLACE_ME_PUBKEY>>>` — your SSH public key (cat ~/.ssh/id_ed25519.pub).
 2. Write Ubuntu Server 24.04.2 LTS ISO to one USB stick (Rufus / `dd`).
-3. Format a second USB FAT32 with label **`CIDATA`**. Drop `autoinstall.yaml` on it as `user-data` and create an empty `meta-data` file.
+3. Build the CIDATA seed USB — see `infra/cidata/README.md` for the exact `mkfs.vfat` / copy commands.
 4. Boot the M5 from the Ubuntu USB (with CIDATA inserted). Confirm partitioning when it prompts. Walk away — comes back as a fully provisioned host with Docker, AMDVLK, Tailscale, and the repo cloned to `/srv/ai`. Skip to §1.5.
 
 **Path B (interactive): step-by-step manual install.** Use this if you want to learn each layer.
@@ -66,7 +66,9 @@ Designed for: a **no-code AI prompt developer** who wants **100% local privacy**
 sudo apt update && sudo apt full-upgrade -y
 sudo apt install -y linux-generic-hwe-24.04 git curl wget htop iperf3 \
                     libvulkan1 mesa-vulkan-drivers vulkan-tools radeontop \
-                    huggingface-cli restic ufw whois
+                    python3-pip restic ufw whois
+# huggingface-cli is not an apt package on noble — install via pip:
+pip3 install --break-system-packages 'huggingface_hub[cli]'
 sudo reboot
 ```
 
@@ -366,12 +368,16 @@ to the M5's USB4 port.
 ```
 infra/
 ├── README.md                          ← you are here
+├── cidata/                            # CIDATA seed USB helpers (autoinstall path)
+│   ├── README.md
+│   └── meta-data
 ├── node-a-bosgame/
 │   ├── autoinstall.yaml               # unattended Ubuntu Server installer (Path A)
 │   ├── docker-compose.yml             # primary stack
 │   ├── .env.example                   # secrets template
 │   ├── litellm/config.yaml            # routing rules
 │   ├── caddy/Caddyfile                # reverse-proxy + auto-TLS
+│   ├── dify/README.md                 # how to clone Dify's compose alongside
 │   ├── llama-server/run.sh            # bare-metal alt launch script
 │   └── systemd/llama-server.service   # bare-metal systemd unit
 ├── node-b-desktop/

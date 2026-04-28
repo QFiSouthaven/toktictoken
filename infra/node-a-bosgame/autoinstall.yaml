@@ -24,17 +24,10 @@
 #      to target a specific one — the default `lvm` layout uses the largest.
 #
 # ----------------------------------------------------------------------------
-# HOW TO BOOT THIS:
-# ----------------------------------------------------------------------------
-#   Option 1 — USB stick alongside the Ubuntu Server ISO:
-#     1. Write Ubuntu 24.04.2 LTS Server ISO to one USB stick.
-#     2. Format a second USB stick FAT32 with label "CIDATA".
-#     3. Drop this file on it as `user-data` and create an empty `meta-data`.
-#     4. Boot the M5 from the Ubuntu USB; it will detect CIDATA and run unattended.
-#
-#   Option 2 — kernel parameter (advanced):
-#     At GRUB, edit boot line to add:
-#       autoinstall ds=nocloud-net;s=https://your-host/path/
+# HOW TO BOOT THIS:  see infra/cidata/README.md for full USB-build steps.
+#   tl;dr: format a USB stick as FAT32 labeled "CIDATA", copy this file as
+#   `user-data`, copy infra/cidata/meta-data as `meta-data`, then boot the
+#   target from the Ubuntu Server 24.04.2 LTS ISO USB with CIDATA inserted.
 # ============================================================================
 
 autoinstall:

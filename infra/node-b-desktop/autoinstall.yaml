@@ -22,7 +22,7 @@
 #      correct one — default `lvm` layout uses the largest.
 #
 # ----------------------------------------------------------------------------
-# HOW TO BOOT THIS:  (see Node A autoinstall.yaml header)
+# HOW TO BOOT THIS:  see infra/cidata/README.md for full USB-build steps.
 # ============================================================================
 
 autoinstall:
